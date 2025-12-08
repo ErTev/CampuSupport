@@ -1,0 +1,8 @@
+fastapi[all]
+sqlalchemy
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+requests
+python-dotenv
+pyjwt

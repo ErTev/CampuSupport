@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampuSupport - Ticket Sistemi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 CampuSupport - Destek Sistemi</h1>
+        <div id="message" class="message hidden"></div>
+
+        <section id="auth-section">
+            <h2>Giriş Yap</h2>
+            <form id="login-form">
+                <label for="login-email">E-posta:</label>
+                <input type="email" id="login-email" placeholder="örnek@universite.edu.tr" required>
+                
+                <label for="login-password">Şifre:</label>
+                <input type="password" id="login-password" placeholder="En az 6 karakter" required>
+                
+                <button type="submit">Giriş Yap</button>
+            </form>
+            
+            <p style="text-align: center;">
+                Hesabınız yok mu? <a href="#" id="show-register">Kayıt Ol</a>
+            </p>
+
+            <h2 id="register-title" style="display:none;">Yeni Hesap Oluştur</h2>
+            <form id="register-form" style="display:none;">
+                <label for="register-email">E-posta:</label>
+                <input type="email" id="register-email" placeholder="örnek@universite.edu.tr" required>
+                
+                <label for="register-password">Şifre:</label>
+                <input type="password" id="register-password" placeholder="En az 6 karakter" required>
+                
+                <label for="register-role">Rolü Seçin:</label>
+                <select id="register-role" required>
+                    <option value="">-- Rol Seçin --</option>
+                    <option value="student">Öğrenci</option>
+                    <option value="support">Destek Personeli</option>
+                    <option value="department">Departman Yöneticisi</option>
+                    <option value="admin">Yönetici</option>
+                </select>
+                
+                <button type="submit">Kayıt Ol</button>
+            </form>
+        </section>
+
+        <section id="ticket-section" style="display:none;">
+            <div id="user-info" style="display:none;">
+                <div>
+                    <strong>Hoş geldiniz,</strong> <span id="current-user">Kullanıcı</span>
+                    <span id="current-user-role" style="margin-left: 10px; font-size: 12px; color: #667eea; font-weight: bold;"></span>
+                </div>
+                <button id="logout-button">Çıkış Yap</button>
+            </div>
+
+            <!-- STUDENT SECTION -->
+            <div id="student-section" style="display:none;">
+                <h2>Yeni Ticket Oluştur</h2>
+                <form id="ticket-form">
+                    <label for="ticket-title">Başlık:</label>
+                    <input type="text" id="ticket-title" placeholder="Örn: Şifre sıfırlama isteği" required>
+                    
+                    <label for="ticket-description">Açıklama:</label>
+                    <textarea id="ticket-description" placeholder="Sorununuzun detaylı açıklamasını yapınız..." required></textarea>
+                    
+                    <label for="ticket-department">Departman:</label>
+                    <select id="ticket-department" required>
+                        <option value="">-- Departman Seçin --</option>
+                        <option value="Bilgi Islem">Bilgi İşlem</option>
+                        <option value="Yapi Isleri">Yapı İşleri</option>
+                        <option value="Ogrenci Isleri">Öğrenci İşleri</option>
+                        <option value="Akademik Danismanlik">Akademik Danışmanlık</option>
+                    </select>
+                    
+                    <label for="ticket-priority">Öncelik:</label>
+                    <select id="ticket-priority" required>
+                        <option value="">-- Öncelik Seçin --</option>
+                        <option value="Low">Düşük</option>
+                        <option value="Medium">Orta</option>
+                        <option value="High">Yüksek</option>
+                    </select>
+                    
+                    <button type="submit">Ticket Gönder</button>
+                </form>
+            </div>
+
+            <!-- DEPARTMENT SECTION -->
+            <div id="department-section" style="display:none;">
+                <h2>📋 Departman Yönetimi Paneli</h2>
+                
+                <div style="margin-bottom: 20px;">
+                    <label for="dept-status-filter">Duruma Göre Filtrele:</label>
+                    <select id="dept-status-filter">
+                        <option value="">-- Tüm Durumlar --</option>
+                        <option value="Open">Açık</option>
+                        <option value="In Progress">İşlemde</option>
+                        <option value="Resolved">Çözüldü</option>
+                        <option value="Closed">Kapalı</option>
+                    </select>
+                </div>
+
+                <h3>Departman Ticket'ları</h3>
+                <div id="department-tickets-container"></div>
+            </div>
+
+            <!-- SUPPORT SECTION -->
+            <div id="support-section" style="display:none;">
+                <h2>🛠️ Destek Personeli Paneli</h2>
+                <h3>Bana Atanmış Ticket'lar</h3>
+                <div id="support-tickets-container"></div>
+            </div>
+
+            <!-- ADMIN SECTION -->
+            <div id="admin-section" style="display:none;">
+                <h2>⚙️ Yönetici Paneli</h2>
+                
+                <div style="margin-bottom: 20px;">
+                    <label for="admin-dept-filter">Departman Filtresi:</label>
+                    <select id="admin-dept-filter">
+                        <option value="">-- Tüm Departmanlar --</option>
+                        <option value="Bilgi Islem">Bilgi İşlem</option>
+                        <option value="Yapi Isleri">Yapı İşleri</option>
+                        <option value="Ogrenci Isleri">Öğrenci İşleri</option>
+                        <option value="Akademik Danismanlik">Akademik Danışmanlık</option>
+                    </select>
+                    
+                    <label for="admin-status-filter" style="margin-left: 20px;">Duruma Göre Filtrele:</label>
+                    <select id="admin-status-filter">
+                        <option value="">-- Tüm Durumlar --</option>
+                        <option value="Open">Açık</option>
+                        <option value="In Progress">İşlemde</option>
+                        <option value="Resolved">Çözüldü</option>
+                        <option value="Closed">Kapalı</option>
+                    </select>
+                    <button id="admin-filter-btn" style="margin-left: 10px; padding: 10px 20px; background-color: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer;">Filtrele</button>
+                </div>
+
+                <h3>Tüm Ticket'lar</h3>
+                <div id="admin-tickets-container"></div>
+
+                        <!-- MODAL - Departman Atama -->
+                        <div id="assign-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 10px; width: 90%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+                                <h3>Ticket'ı Departmana Ata</h3>
+                                <form id="assign-form">
+                                    <label for="assign-department">Departman Seçin:</label>
+                                    <select id="assign-department" required>
+                                        <option value="">-- Departman Seçin --</option>
+                                        <option value="Bilgi Islem">Bilgi İşlem</option>
+                                        <option value="Yapi Isleri">Yapı İşleri</option>
+                                        <option value="Ogrenci Isleri">Öğrenci İşleri</option>
+                                        <option value="Akademik Danismanlik">Akademik Danışmanlık</option>
+                                    </select>
+                                    <button type="submit" style="margin-top: 10px; width: 100%; background-color: #28a745; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer;">Ata</button>
+                                    <button type="button" id="close-modal" style="margin-top: 10px; width: 100%; background-color: #dc3545; color: white; padding: 10px; border: none; border-radius: 5px; cursor: pointer;">İptal</button>
+                                </form>
+                            </div>
+                        </div>
+            </div>
+
+            <!-- COMMON TICKETS LIST -->
+            <div id="ticket-list">
+                <h3>📋 Ticket Listem</h3>
+                <div id="tickets-container"></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
