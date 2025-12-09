@@ -7,6 +7,7 @@ from app.core.security import get_password_hash, verify_password, create_access_
 from app.core.auth import get_current_user
 from datetime import timedelta
 from app.core.config import settings
+from app.schemas.user import ChangePasswordRequest, AdminResetPasswordRequest
 
 router = APIRouter(tags=["Authentication"])
 
@@ -63,3 +64,45 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "role": {"id": current_user.role_id, "name": current_user.role.name},
         "department_id": current_user.department_id
     }
+
+
+@router.post('/change-password')
+def change_password(
+    req: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Authenticated user can change their own password by providing current password."""
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kullanıcı bulunamadı.")
+
+    # verify current password
+    if not verify_password(req.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mevcut şifre yanlış.")
+
+    user.password_hash = get_password_hash(req.new_password)
+    db.add(user)
+    db.commit()
+    return {"message": "Şifre başarıyla güncellendi."}
+
+
+@router.put('/users/{user_id}/password')
+def admin_reset_password(
+    user_id: int,
+    req: AdminResetPasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin can reset another user's password without knowing the old one."""
+    if current_user.role.name != 'admin':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işlem için admin yetkisi gerekir.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kullanıcı bulunamadı.")
+
+    user.password_hash = get_password_hash(req.new_password)
+    db.add(user)
+    db.commit()
+    return {"message": "Kullanıcının şifresi admin tarafından başarıyla sıfırlandı."}

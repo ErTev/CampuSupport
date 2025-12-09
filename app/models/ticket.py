@@ -12,6 +12,7 @@ class Ticket(Base):
  
     status = Column(String, default="Open") 
     priority = Column(String, default="Low") 
+    category = Column(String, nullable=True)
  
     created_at = Column(DateTime, default=datetime.utcnow) 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow) 
@@ -25,6 +26,10 @@ class Ticket(Base):
     assigned_department = relationship("Department", back_populates="tickets") 
  
     comments = relationship("Comment", back_populates="ticket") 
+
+    @property
+    def created_by_user(self):
+        return self.creator
  
 class Comment(Base): 
     __tablename__ = "comments" 

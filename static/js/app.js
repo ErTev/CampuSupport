@@ -285,6 +285,7 @@ ticketForm.addEventListener("submit", async (e) => {
     const description = document.getElementById("ticket-description").value;
     const department_name = document.getElementById("ticket-department").value;
     const priority = document.getElementById("ticket-priority").value;
+    const category = document.getElementById("ticket-category").value;
 
     try {
         const response = await fetch(`${API_BASE_URL}/tickets/`, {
@@ -339,8 +340,78 @@ if (suggestBtn) {
 
             if (resp.ok) {
                 const data = await resp.json();
-                suggestedDepartmentSpan.textContent = data.department || "(öneri yok)";
-                suggestedPrioritySpan.textContent = data.priority || "Low";
+                const deptList = document.getElementById('suggested-departments-list');
+                const prioList = document.getElementById('suggested-priorities-list');
+                const catList = document.getElementById('suggested-categories-list');
+                const catOtherDiv = document.getElementById('suggested-category-other');
+                const catOtherInput = document.getElementById('suggested-category-custom');
+                const titleEl = document.getElementById('suggested-title');
+                const explanationEl = document.getElementById('suggested-explanation');
+
+                // Clear previous
+                deptList.innerHTML = '';
+                prioList.innerHTML = '';
+                if (catList) catList.innerHTML = '';
+                titleEl.textContent = '';
+                explanationEl.textContent = '';
+
+                // Render department options as radio buttons
+                const depOptions = data.department_options || [];
+                depOptions.forEach((d, idx) => {
+                    const id = `dept-opt-${idx}`;
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-dept" id="${id}" value="${d}" ${idx===0? 'checked': ''}> <span>${d}</span></label>`;
+                    deptList.appendChild(wrapper);
+                });
+
+                // Render priority options
+                const prOptions = data.priority_options || [];
+                prOptions.forEach((p, idx) => {
+                    const id = `prio-opt-${idx}`;
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-prio" id="${id}" value="${p}" ${idx===0? 'checked': ''}> <span>${p}</span></label>`;
+                    prioList.appendChild(wrapper);
+                });
+
+                // Suggested title and explanation
+                if (data.suggested_title) titleEl.textContent = data.suggested_title;
+                if (data.explanation) explanationEl.textContent = data.explanation;
+
+                // Render category options
+                const catOptions = data.category_options || [];
+                if (catList) {
+                    catOptions.forEach((c, idx) => {
+                        const id = `cat-opt-${idx}`;
+                        const wrapper = document.createElement('div');
+                        wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-cat" id="${id}" value="${c}" ${idx===0? 'checked': ''}> <span>${c}</span></label>`;
+                        catList.appendChild(wrapper);
+                    });
+                    // Add "Other" option
+                    const otherId = `cat-opt-other`;
+                    const otherWrapper = document.createElement('div');
+                    otherWrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-cat" id="${otherId}" value="__other"> <span>Diğer...</span></label>`;
+                    catList.appendChild(otherWrapper);
+                    if (catOtherDiv) catOtherDiv.style.display = 'none';
+                    // listen for changes to show/hide custom input
+                    catList.querySelectorAll('input[name="suggest-cat"]').forEach(r => {
+                        r.addEventListener('change', () => {
+                            const sel = document.querySelector('input[name="suggest-cat"]:checked');
+                            if (sel && sel.value === '__other') {
+                                if (catOtherDiv) catOtherDiv.style.display = 'block';
+                                if (catOtherInput) catOtherInput.focus();
+                            } else {
+                                if (catOtherDiv) catOtherDiv.style.display = 'none';
+                            }
+                        });
+                    });
+                }
+
+                // Put suggested title into placeholder so user can accept it
+                if (data.suggested_title) {
+                    const titleInput = document.getElementById('ticket-title');
+                    if (titleInput && !titleInput.value) titleInput.placeholder = data.suggested_title;
+                }
+
                 suggestionsDiv.style.display = "block";
             } else {
                 const err = await resp.json();
@@ -355,26 +426,48 @@ if (suggestBtn) {
 
 if (acceptSuggestionBtn) {
     acceptSuggestionBtn.addEventListener("click", () => {
-        const dept = suggestedDepartmentSpan.textContent;
-        const prio = suggestedPrioritySpan.textContent;
-        if (dept && dept !== "(öneri yok)") {
+        // Read selected department radio
+        const selectedDept = document.querySelector('input[name="suggest-dept"]:checked');
+        const selectedPrio = document.querySelector('input[name="suggest-prio"]:checked');
+                const selectedCat = document.querySelector('input[name="suggest-cat"]:checked');
+
+        if (selectedDept) {
             const deptSelect = document.getElementById("ticket-department");
             for (let i = 0; i < deptSelect.options.length; i++) {
-                if (deptSelect.options[i].value === dept) {
+                if (deptSelect.options[i].value === selectedDept.value) {
                     deptSelect.selectedIndex = i;
                     break;
                 }
             }
         }
-        if (prio) {
+
+        if (selectedPrio) {
             const prioSelect = document.getElementById("ticket-priority");
             for (let i = 0; i < prioSelect.options.length; i++) {
-                if (prioSelect.options[i].value.toLowerCase() === prio.toLowerCase()) {
+                if (prioSelect.options[i].value === selectedPrio.value) {
                     prioSelect.selectedIndex = i;
                     break;
                 }
             }
         }
+
+        const titleInput = document.getElementById('ticket-title');
+        const suggestedTitleEl = document.getElementById('suggested-title');
+        if (titleInput && !titleInput.value && suggestedTitleEl && suggestedTitleEl.textContent) {
+            titleInput.value = suggestedTitleEl.textContent;
+        }
+
+        // Apply selected category into ticket-category input
+        if (selectedCat) {
+            const ticketCatInput = document.getElementById('ticket-category');
+            if (selectedCat.value === '__other') {
+                const custom = document.getElementById('suggested-category-custom')?.value || '';
+                if (ticketCatInput) ticketCatInput.value = custom;
+            } else {
+                if (ticketCatInput) ticketCatInput.value = selectedCat.value;
+            }
+        }
+
         suggestionsDiv.style.display = "none";
     });
 }
@@ -442,11 +535,18 @@ async function loadMyTickets() {
                 
                 // Creator role göster (admin/manager için)
                 let creatorInfo = "";
-                if (currentUserRole === "admin" || currentUserRole === "department") {
-                    const creatorRole = ticket.created_by_user?.role_id === 1 ? "Öğrenci" : 
-                                       ticket.created_by_user?.role_id === 2 ? "Destek Personeli" :
-                                       ticket.created_by_user?.role_id === 3 ? "Departman Yöneticisi" :
-                                       ticket.created_by_user?.role_id === 4 ? "Yönetici" : "Bilinmiyor";
+                if (currentUserRole === "admin" || currentUserRole === "department" || currentUserRole === "support") {
+                    // Prefer role_name if provided by the API; otherwise fall back to role_id mapping
+                    let creatorRole = "Bilinmiyor";
+                    if (ticket.created_by_user?.role_name) {
+                        const rn = ticket.created_by_user.role_name.toLowerCase();
+                        creatorRole = rn === 'student' ? 'Öğrenci' : rn === 'support' ? 'Destek Personeli' : rn === 'department' ? 'Departman Yöneticisi' : rn === 'admin' ? 'Yönetici' : 'Bilinmiyor';
+                    } else if (ticket.created_by_user?.role_id) {
+                        creatorRole = ticket.created_by_user.role_id === 1 ? "Öğrenci" : 
+                                       ticket.created_by_user.role_id === 2 ? "Destek Personeli" :
+                                       ticket.created_by_user.role_id === 3 ? "Departman Yöneticisi" :
+                                       ticket.created_by_user.role_id === 4 ? "Yönetici" : "Bilinmiyor";
+                    }
                     creatorInfo = `<p><strong>Oluşturan:</strong> ${ticket.created_by_user?.email || "Bilinmiyor"} (${creatorRole})</p>`;
                 }
                 
@@ -608,12 +708,17 @@ async function loadMyTickets() {
                                 const content = ta ? ta.value.trim() : '';
                                 if (!content) { showMessage('Lütfen taslağı doldurun.', 'error'); return; }
 
-                                // Gönder: status'u Resolved yap ve resolution_note olarak taslağı gönder
+                                // Durum dropdown'dan seçili durumu al
+                                const statusSelect = document.getElementById(`status-select-${ticket.id}`);
+                                const selectedStatus = statusSelect ? statusSelect.value : 'Resolved';
+                                if (!selectedStatus) { showMessage('Lütfen durum seçiniz.', 'error'); return; }
+
+                                // Gönder: seçili status'u ve taslağı resolution_note olarak gönder
                                 sendBtn.disabled = true;
                                 sendBtn.textContent = 'Gönderiliyor...';
                                 try {
-                                    await updateTicketStatus(ticket.id, 'Resolved', content);
-                                    showMessage('Taslak çözümmüş gibi kaydedildi ve durum güncellendi.', 'success');
+                                    await updateTicketStatus(ticket.id, selectedStatus, content);
+                                    showMessage(`Taslak gönderildi ve durum "${selectedStatus}" olarak güncellendi.`, 'success');
                                     loadMyTickets();
                                 } catch (e) {
                                     console.error(e);

@@ -6,16 +6,19 @@ from app.models.ticket import Ticket, Comment
 from app.models.user import User, Department, Role
 from app.schemas.ticket import TicketCreate, TicketResponse, CommentCreate
 from app.schemas.ticket import SuggestRequest, SuggestResponse, UpdateStatusRequest, ReassignSupportRequest
-from app.core.services import suggest_ticket, summarize_text, draft_response
-from app.core.notifications import NotificationFactory
+from app.core.services import suggest_ticket, summarize_text, draft_response, send_notification
+import threading
 from datetime import datetime
 from app.core.auth import get_current_user, get_department, get_support
 from typing import List, Optional
+import logging
+
+logger = logging.getLogger("app.routers.tickets")
 
 router = APIRouter(tags=["Tickets"])
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
-def create_new_ticket(
+async def create_new_ticket(
     ticket_data: TicketCreate, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -23,12 +26,43 @@ def create_new_ticket(
     # Aktif departmanlari cek
     department_names = [d.name for d in db.query(Department).all()]
 
-    # YAPAY ZEKA KULLANARAK OTOMATIK KATEGORIZE ETME (ya da user'dan gelen department_name kullan)
-    if ticket_data.department_name in department_names:
+    # If user provided department explicitly and it's valid, use it; otherwise ask the AI for suggestions
+    assigned_department_name = None
+    chosen_priority = ticket_data.priority if ticket_data.priority else None
+    chosen_title = ticket_data.title if ticket_data.title else None
+    chosen_category = ticket_data.category if ticket_data.category else None
+
+    if ticket_data.department_name and ticket_data.department_name in department_names:
         assigned_department_name = ticket_data.department_name
-    else:
-        assigned_department_name = department_names[0] if department_names else None
-    
+
+    # If department/priority/title/category missing, call suggest_ticket to obtain defaults
+    if not assigned_department_name or not chosen_priority or not chosen_title or not chosen_category:
+        try:
+            suggestion = await suggest_ticket(ticket_data.title or "", ticket_data.description or "", department_names)
+            # pick first department option if not provided
+            if not assigned_department_name:
+                dept_opts = suggestion.get("department_options") or []
+                assigned_department_name = dept_opts[0] if dept_opts else (department_names[0] if department_names else None)
+            if not chosen_priority:
+                prio_opts = suggestion.get("priority_options") or []
+                chosen_priority = prio_opts[0] if prio_opts else "Low"
+            if not chosen_title:
+                chosen_title = suggestion.get("suggested_title")
+            if not chosen_category:
+                # category mirrors department suggestion by default
+                chosen_category = assigned_department_name
+        except Exception as e:
+            print(f"Suggestion failed: {e}")
+            # fallback defaults
+            if not assigned_department_name:
+                assigned_department_name = department_names[0] if department_names else None
+            if not chosen_priority:
+                chosen_priority = "Low"
+            if not chosen_title:
+                chosen_title = (ticket_data.description[:80] + '...' if ticket_data.description else 'No Title')
+            if not chosen_category:
+                chosen_category = None
+
     if not assigned_department_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hiçbir departman bulunamadı.")
 
@@ -36,10 +70,15 @@ def create_new_ticket(
     if not department:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Departman bulunamadı.")
 
+    # final title/priority
+    title_val = chosen_title if chosen_title else (ticket_data.description[:80] + '...' if ticket_data.description else 'No Title')
+    priority_val = chosen_priority if chosen_priority else "Low"
+
     new_ticket = Ticket(
-        title=ticket_data.title,
+        title=title_val,
         description=ticket_data.description,
-        priority=ticket_data.priority,
+        priority=priority_val,
+        category=chosen_category,
         created_by_user_id=current_user.id,
         assigned_department_id=department.id, 
         status="Open"
@@ -48,6 +87,7 @@ def create_new_ticket(
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
+    logger.info("Ticket created: id=%s title=%s created_by=%s department=%s", new_ticket.id, new_ticket.title, current_user.email, department.name)
 
     return new_ticket
 
@@ -177,7 +217,7 @@ def assign_ticket_to_department(
     return {"message": f"Ticket {ticket_id} basariyla {department_name} departmanına atandi."}
 
 @router.put("/{ticket_id}/status")
-def update_ticket_status(
+async def update_ticket_status(
     ticket_id: int, 
     req: UpdateStatusRequest,
     db: Session = Depends(get_db),
@@ -223,24 +263,31 @@ def update_ticket_status(
             content=f"[Çözüm Kaydı] {current_user.email}: {note}"
         )
         db.add(comment)
-        
-        # Harici bildirim servisleri çağır (Email, Slack, SMS vb.)
-        creator = db.query(User).filter(User.id == ticket.created_by_user_id).first()
-        NotificationFactory.send_all_enabled(
-            ticket_id=ticket.id,
-            title=ticket.title,
-            status=new_status,
-            description=ticket.description,
-            resolver_email=current_user.email,
-            created_by_email=creator.email if creator else "unknown@example.com",
-            phone_number=getattr(creator, 'phone_number', None) if creator else None
-        )
 
     db.commit()
     db.refresh(ticket)
 
-    return {"message": f"Ticket {ticket_id} durumu '{new_status}' olarak guncellendi."}
+    # Asenkron: harici bildirim gönder (thread ile arka plan)
+    try:
+        title = ticket.title
+        short_desc = ticket.description
+        # pass resolver (current user's email) so notifications include who resolved it
+        # and pass the ticket creator's email so they receive the notification
+        creator_email = None
+        try:
+            creator_email = ticket.creator.email if ticket.creator else None
+        except Exception:
+            creator_email = None
 
+        threading.Thread(
+            target=send_notification,
+            args=(ticket.id, old_status, new_status, title, short_desc, current_user.email, creator_email),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        print(f"Bildirim başlatılamadı: {e}")
+
+    return {"message": f"Ticket {ticket_id} durumu '{new_status}' olarak guncellendi."}
 
 
 @router.post("/{ticket_id}/summarize")
@@ -286,6 +333,23 @@ async def draft_response_for_ticket(
         draft = await draft_response(ticket.title, ticket.description)
     except Exception:
         draft = "Taslak olusturulamadi."
+
+    # Notify ticket creator that a draft response was prepared (send email)
+    try:
+        creator_email = None
+        try:
+            creator_email = ticket.creator.email if ticket.creator else None
+        except Exception:
+            creator_email = None
+
+        # Use a background thread to avoid blocking the request
+        threading.Thread(
+            target=send_notification,
+            args=(ticket.id, ticket.status, ticket.status, ticket.title, draft, current_user.email, creator_email),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        print(f"Draft bildirimi başlatılamadı: {e}")
 
     return {"draft": draft}
 
@@ -376,4 +440,10 @@ async def suggest_ticket_endpoint(
     # departmanları çek
     department_names = [d.name for d in db.query(Department).all()]
     result = await suggest_ticket(suggest_req.title or "", suggest_req.description, department_names)
-    return SuggestResponse(department=result.get("department"), priority=result.get("priority"))
+    return SuggestResponse(
+        suggested_title=result.get("suggested_title"),
+        department_options=result.get("department_options", []),
+        category_options=result.get("category_options", []),
+        priority_options=result.get("priority_options", []),
+        explanation=result.get("explanation")
+    )
