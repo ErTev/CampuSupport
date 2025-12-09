@@ -66,6 +66,14 @@
                     
                     <label for="ticket-description">Açıklama:</label>
                     <textarea id="ticket-description" placeholder="Sorununuzun detaylı açıklamasını yapınız..." required></textarea>
+                    <button type="button" id="suggest-btn" style="margin-top:8px;">Öneri Al</button>
+                    <div id="suggestions" style="margin-top:8px; display:none;">
+                        <strong>Önerilen Departman:</strong> <span id="suggested-department"></span>
+                        <br>
+                        <strong>Önerilen Öncelik:</strong> <span id="suggested-priority"></span>
+                        <br>
+                        <button type="button" id="accept-suggestion" style="margin-top:6px;">Öneriyi Kabul Et</button>
+                    </div>
                     
                     <label for="ticket-department">Departman:</label>
                     <select id="ticket-department" required>

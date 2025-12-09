@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# CampuSupport-NEW
-Code Night Projesi
-=======
 # CampuSupport - Üniversite Ticket Yönetim Sistemi
 
 ## 📋 Proje Açıklaması
@@ -330,6 +326,3 @@ Sorular veya öneriler için lütfen issue açın veya bize email gönderin.
 ---
 
 **Son Güncelleme:** Aralık 2025
->>>>>>> f1ad79d (İlk yükleme)
-#   C a m p u S u p p o r t  
- 

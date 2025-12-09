@@ -20,7 +20,7 @@ class Ticket(Base):
     assigned_department_id = Column(Integer, ForeignKey("departments.id")) 
     assigned_support_id = Column(Integer, ForeignKey("users.id"), nullable=True) 
  
-    creator = relationship("User", foreign_keys=[created_by_user_id], back_populates="created_tickets") 
+    creator = relationship("User", foreign_keys=[created_by_user_id], back_populates="created_tickets", viewonly=True) 
     assignee = relationship("User", foreign_keys=[assigned_support_id], back_populates="assigned_tickets") 
     assigned_department = relationship("Department", back_populates="tickets") 
  

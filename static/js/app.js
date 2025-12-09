@@ -310,8 +310,98 @@ ticketForm.addEventListener("submit", async (e) => {
     }
 });
 
+// Suggestion: call backend AI suggest endpoint
+const suggestBtn = document.getElementById("suggest-btn");
+const suggestionsDiv = document.getElementById("suggestions");
+const suggestedDepartmentSpan = document.getElementById("suggested-department");
+const suggestedPrioritySpan = document.getElementById("suggested-priority");
+const acceptSuggestionBtn = document.getElementById("accept-suggestion");
+
+if (suggestBtn) {
+    suggestBtn.addEventListener("click", async () => {
+        const title = document.getElementById("ticket-title").value || "";
+        const description = document.getElementById("ticket-description").value || "";
+        if (!description) {
+            showMessage("Lütfen önce açıklama girin.", "error");
+            return;
+        }
+
+        try {
+            const resp = await fetch(`${API_BASE_URL}/tickets/suggest`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    // suggestions don't require auth but it's fine to include token
+                    ...(authToken ? { "Authorization": `Bearer ${authToken}` } : {})
+                },
+                body: JSON.stringify({ title, description })
+            });
+
+            if (resp.ok) {
+                const data = await resp.json();
+                suggestedDepartmentSpan.textContent = data.department || "(öneri yok)";
+                suggestedPrioritySpan.textContent = data.priority || "Low";
+                suggestionsDiv.style.display = "block";
+            } else {
+                const err = await resp.json();
+                showMessage(`Öneri alınamadı: ${err.detail || resp.statusText}`, "error");
+            }
+        } catch (e) {
+            console.error(e);
+            showMessage("Öneri servisine bağlanılamadı.", "error");
+        }
+    });
+}
+
+if (acceptSuggestionBtn) {
+    acceptSuggestionBtn.addEventListener("click", () => {
+        const dept = suggestedDepartmentSpan.textContent;
+        const prio = suggestedPrioritySpan.textContent;
+        if (dept && dept !== "(öneri yok)") {
+            const deptSelect = document.getElementById("ticket-department");
+            for (let i = 0; i < deptSelect.options.length; i++) {
+                if (deptSelect.options[i].value === dept) {
+                    deptSelect.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+        if (prio) {
+            const prioSelect = document.getElementById("ticket-priority");
+            for (let i = 0; i < prioSelect.options.length; i++) {
+                if (prioSelect.options[i].value.toLowerCase() === prio.toLowerCase()) {
+                    prioSelect.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+        suggestionsDiv.style.display = "none";
+    });
+}
+
+// Load support staff list
+let supportStaffList = [];
+async function loadSupportStaffList() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/tickets/support-list`, {
+            headers: {
+                "Authorization": `Bearer ${authToken}`
+            }
+        });
+
+        if (response.ok) {
+            supportStaffList = await response.json();
+        }
+    } catch (error) {
+        console.error("Support listesi yüklenemedi:", error);
+    }
+}
+
 // Load My Tickets
 async function loadMyTickets() {
+    // Destek görevlileri yükle
+    await loadSupportStaffList();
+    
     try {
         let endpoint = `${API_BASE_URL}/tickets/my`;
         let containerId = "tickets-container";
@@ -349,12 +439,79 @@ async function loadMyTickets() {
             tickets.forEach(ticket => {
                 const ticketDiv = document.createElement("div");
                 ticketDiv.className = "ticket-item";
+                
+                // Creator role göster (admin/manager için)
+                let creatorInfo = "";
+                if (currentUserRole === "admin" || currentUserRole === "department") {
+                    const creatorRole = ticket.created_by_user?.role_id === 1 ? "Öğrenci" : 
+                                       ticket.created_by_user?.role_id === 2 ? "Destek Personeli" :
+                                       ticket.created_by_user?.role_id === 3 ? "Departman Yöneticisi" :
+                                       ticket.created_by_user?.role_id === 4 ? "Yönetici" : "Bilinmiyor";
+                    creatorInfo = `<p><strong>Oluşturan:</strong> ${ticket.created_by_user?.email || "Bilinmiyor"} (${creatorRole})</p>`;
+                }
+                
+                // Support reassign UI (admin/manager için - NET VİSİBLE)
+                let supportUI = "";
+                if (currentUserRole === "admin" || currentUserRole === "department") {
+                    let optionsHtml = '<option value="">-- Seç --</option>';
+                    supportStaffList.forEach(staff => {
+                        optionsHtml += `<option value="${staff.id}">${staff.email}</option>`;
+                    });
+                    
+                    supportUI = `
+                        <div style="margin-top: 10px; padding: 12px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 5px;">
+                            <strong style="color: #856404;">🔄 DESTEK GÖREVLİSİ DEĞİŞTİR</strong>
+                            <div style="margin-top: 8px;">
+                                <select id="support-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
+                                    ${optionsHtml}
+                                </select>
+                                <button type="button" class="reassign-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #ffc107; color: black; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">DEĞİŞTİR</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Status update UI (support kendi ticket'larını, admin/manager tüm ticket'ları)
+                let statusUpdateUI = "";
+                if ((currentUserRole === "support" && ticket.assigned_support_id === null) || 
+                    (currentUserRole === "admin" || currentUserRole === "department") || 
+                    (currentUserRole === "support")) {
+                    // Support: sadece kendisine atanan ticket'ları görebilir ve güncelleyebilir
+                    // Admin/Manager: tüm ticket'ları güncelleyebilir
+                    let showStatus = false;
+                    if (currentUserRole === "admin" || currentUserRole === "department") {
+                        showStatus = true;
+                    } else if (currentUserRole === "support" && ticket.assigned_support_id) {
+                        showStatus = true;
+                    }
+                    
+                    if (showStatus) {
+                        statusUpdateUI = `
+                            <div style="margin-top: 10px; padding: 12px; background: #d4edda; border: 2px solid #28a745; border-radius: 5px;">
+                                <strong style="color: #155724;">✓ DURUMU GÜNCELLE</strong>
+                                <div style="margin-top: 8px;">
+                                    <select id="status-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
+                                        <option value="Open">📂 Açık</option>
+                                        <option value="In Progress">⏳ İşlemde</option>
+                                        <option value="Resolved">✅ Çözüldü</option>
+                                        <option value="Closed">🔒 Kapalı</option>
+                                    </select>
+                                    <button type="button" class="status-update-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">KAYDET</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
                 ticketDiv.innerHTML = `
                     <h4>${ticket.title}</h4>
+                    ${creatorInfo}
                     <p><strong>Durum:</strong> <span class="status-${ticket.status.toLowerCase()}">${ticket.status}</span></p>
                     <p><strong>Öncelik:</strong> <span class="priority-${ticket.priority.toLowerCase()}">${ticket.priority}</span></p>
                     <p><strong>Açıklama:</strong> ${ticket.description}</p>
                     <p><strong>Oluşturma:</strong> ${new Date(ticket.created_at).toLocaleString('tr-TR')}</p>
+                    ${supportUI}
+                    ${statusUpdateUI}
                     <div id="comments-${ticket.id}"></div>
                     <form class="comment-form" data-ticket-id="${ticket.id}">
                         <input type="text" placeholder="Yorum yazın..." required>
@@ -362,6 +519,36 @@ async function loadMyTickets() {
                     </form>
                 `;
                 container.appendChild(ticketDiv);
+
+                // Reassign button listener
+                const reassignBtn = ticketDiv.querySelector(".reassign-btn");
+                if (reassignBtn) {
+                    reassignBtn.addEventListener("click", async () => {
+                        const supportSelect = document.getElementById(`support-select-${ticket.id}`);
+                        const supportId = supportSelect.value;
+                        if (!supportId || supportId === "0") {
+                            showMessage("Lütfen destek görevlisi seçiniz.", "error");
+                            return;
+                        }
+                        await reassignSupport(ticket.id, parseInt(supportId));
+                        loadMyTickets();
+                    });
+                }
+
+                // Status update button listener
+                const statusBtn = ticketDiv.querySelector(".status-update-btn");
+                if (statusBtn) {
+                    statusBtn.addEventListener("click", async () => {
+                        const statusSelect = document.getElementById(`status-select-${ticket.id}`);
+                        const newStatus = statusSelect.value;
+                        if (!newStatus) {
+                            showMessage("Lütfen durum seçiniz.", "error");
+                            return;
+                        }
+                        await updateTicketStatus(ticket.id, newStatus);
+                        loadMyTickets();
+                    });
+                }
 
                 // Load Comments
                 loadComments(ticket.id);
@@ -416,6 +603,56 @@ async function addComment(e, ticketId) {
         }
     } catch (error) {
         showMessage("Yorum gönderirken hata oluştu!", "error");
+        console.error(error);
+    }
+}
+
+// Reassign support staff to ticket
+async function reassignSupport(ticketId, supportId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}/reassign-support`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ new_support_id: supportId })
+        });
+
+        if (response.ok) {
+            showMessage("Destek görevlisi başarıyla atandı!", "success");
+            loadMyTickets();
+        } else {
+            const err = await response.json();
+            showMessage(`Hata: ${err.detail}`, "error");
+        }
+    } catch (error) {
+        showMessage("Atama sırasında hata oluştu!", "error");
+        console.error(error);
+    }
+}
+
+// Update ticket status
+async function updateTicketStatus(ticketId, newStatus) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ new_status: newStatus })
+        });
+
+        if (response.ok) {
+            showMessage("Ticket durumu başarıyla güncellendi!", "success");
+            loadMyTickets();
+        } else {
+            const err = await response.json();
+            showMessage(`Hata: ${err.detail}`, "error");
+        }
+    } catch (error) {
+        showMessage("Durum güncellemesi sırasında hata oluştu!", "error");
         console.error(error);
     }
 }

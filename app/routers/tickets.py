@@ -5,6 +5,8 @@ from app.database import get_db
 from app.models.ticket import Ticket, Comment
 from app.models.user import User, Department, Role
 from app.schemas.ticket import TicketCreate, TicketResponse, CommentCreate
+from app.schemas.ticket import SuggestRequest, SuggestResponse, UpdateStatusRequest, ReassignSupportRequest
+from app.core.services import suggest_ticket
 from app.core.auth import get_current_user, get_department, get_support
 from typing import List, Optional
 
@@ -99,16 +101,53 @@ def assign_support_to_ticket(
     current_user: User = Depends(get_department) 
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-    support_user = db.query(User).filter(User.email == support_email, User.role.name == "support").first()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket bulunamadi.")
     
-    if not ticket or not support_user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket veya Destek Personeli bulunamadi.")
+    support_user = db.query(User).filter(User.email == support_email).first()
+    if not support_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destek Personeli bulunamadi.")
     
     ticket.assigned_support_id = support_user.id
     ticket.status = "In Progress"
     db.commit()
 
     return {"message": f"Ticket {ticket_id} basariyla {support_user.email} kullanicisina atandi."}
+
+
+@router.put("/{ticket_id}/reassign-support")
+def reassign_support(
+    ticket_id: int,
+    req: ReassignSupportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin / Departman yöneticisi - Support görevlisini değiştirir (reassign)."""
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket bulunamadi.")
+    
+    # Yetki kontrolü: admin ve departman yöneticisi yapabilir
+    if current_user.role.name == "admin":
+        # Admin tüm ticket'ları reassign edebilir
+        pass
+    elif current_user.role.name == "department":
+        # Departman yöneticisi kendi departmanındaki ticket'ı reassign edebilir
+        if ticket.assigned_department_id != current_user.department_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu ticket'a yetkiniz yok.")
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işleme yetkiniz yok.")
+    
+    new_support = db.query(User).filter(User.id == req.new_support_id).first()
+    if not new_support or new_support.role.name != "support":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destek Personeli bulunamadi.")
+    
+    ticket.assigned_support_id = req.new_support_id
+    db.commit()
+    db.refresh(ticket)
+
+    return {"message": f"Ticket {ticket_id} başarıyla {new_support.email} kullanıcısına atandı."}
+
 
 @router.put("/{ticket_id}/assign-department")
 def assign_ticket_to_department(
@@ -138,11 +177,14 @@ def assign_ticket_to_department(
 @router.put("/{ticket_id}/status")
 def update_ticket_status(
     ticket_id: int, 
-    new_status: str,
+    req: UpdateStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_support) 
+    current_user: User = Depends(get_current_user)
 ):
+    """Ticket durumunu güncelle (admin hepsi, support kendisine atanan, manager kendi bölümdeki)."""
     valid_statuses = ["Open", "In Progress", "Resolved", "Closed"]
+    new_status = req.new_status
+    
     if new_status not in valid_statuses:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Gecersiz durum.")
 
@@ -150,9 +192,26 @@ def update_ticket_status(
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket bulunamadi.")
     
+    # Yetki kontrolü
+    if current_user.role.name == "admin":
+        # Admin tüm ticket'ları güncelleyebilir
+        pass
+    elif current_user.role.name == "support":
+        # Support sadece kendisine atanmış ticket'ları güncelleyebilir
+        if ticket.assigned_support_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu ticket'a yetkiniz yok.")
+    elif current_user.role.name == "department":
+        # Departman yöneticisi kendi departmanındaki ticket'ları güncelleyebilir
+        if ticket.assigned_department_id != current_user.department_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu ticket'a yetkiniz yok.")
+    else:
+        # Student işlem yapamaz
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu işleme yetkiniz yok.")
+    
     old_status = ticket.status
     ticket.status = new_status
     db.commit()
+    db.refresh(ticket)
 
     return {"message": f"Ticket {ticket_id} durumu '{new_status}' olarak guncellendi."}
 
@@ -218,3 +277,29 @@ def list_all_tickets(
         query = query.order_by(priority_order)
         
     return query.all()
+
+
+@router.get("/support-list")
+def get_support_list(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Mevcut destek görevlilerinin listesini döndürür."""
+    support_role = db.query(Role).filter(Role.name == "support").first()
+    if not support_role:
+        return []
+    
+    support_staff = db.query(User).filter(User.role_id == support_role.id).all()
+    return [{"id": u.id, "email": u.email} for u in support_staff]
+
+
+@router.post("/suggest", response_model=SuggestResponse)
+async def suggest_ticket_endpoint(
+    suggest_req: SuggestRequest,
+    db: Session = Depends(get_db)
+):
+    """AI destekli kategori ve öncelik önerisi üretir."""
+    # departmanları çek
+    department_names = [d.name for d in db.query(Department).all()]
+    result = await suggest_ticket(suggest_req.title or "", suggest_req.description, department_names)
+    return SuggestResponse(department=result.get("department"), priority=result.get("priority"))
