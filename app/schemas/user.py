@@ -3,7 +3,7 @@ from typing import Optional
 
 class UserCreate(BaseModel):
     email: EmailStr
-    # Şifre kısıtlaması (6 ile 15 karakter arası) eklendi
+    # Şifre kısıtlaması (6 ile 15 karakter arası)
     password: str = Field(min_length=6, max_length=15)
     role_name: str = "student" # Varsayılan: öğrenci
 
@@ -23,3 +23,12 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=6, max_length=128)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=6, max_length=128)

@@ -285,6 +285,7 @@ ticketForm.addEventListener("submit", async (e) => {
     const description = document.getElementById("ticket-description").value;
     const department_name = document.getElementById("ticket-department").value;
     const priority = document.getElementById("ticket-priority").value;
+    const category = document.getElementById("ticket-category").value;
 
     try {
         const response = await fetch(`${API_BASE_URL}/tickets/`, {
@@ -339,8 +340,78 @@ if (suggestBtn) {
 
             if (resp.ok) {
                 const data = await resp.json();
-                suggestedDepartmentSpan.textContent = data.department || "(öneri yok)";
-                suggestedPrioritySpan.textContent = data.priority || "Low";
+                const deptList = document.getElementById('suggested-departments-list');
+                const prioList = document.getElementById('suggested-priorities-list');
+                const catList = document.getElementById('suggested-categories-list');
+                const catOtherDiv = document.getElementById('suggested-category-other');
+                const catOtherInput = document.getElementById('suggested-category-custom');
+                const titleEl = document.getElementById('suggested-title');
+                const explanationEl = document.getElementById('suggested-explanation');
+
+                // Clear previous
+                deptList.innerHTML = '';
+                prioList.innerHTML = '';
+                if (catList) catList.innerHTML = '';
+                titleEl.textContent = '';
+                explanationEl.textContent = '';
+
+                // Render department options as radio buttons
+                const depOptions = data.department_options || [];
+                depOptions.forEach((d, idx) => {
+                    const id = `dept-opt-${idx}`;
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-dept" id="${id}" value="${d}" ${idx===0? 'checked': ''}> <span>${d}</span></label>`;
+                    deptList.appendChild(wrapper);
+                });
+
+                // Render priority options
+                const prOptions = data.priority_options || [];
+                prOptions.forEach((p, idx) => {
+                    const id = `prio-opt-${idx}`;
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-prio" id="${id}" value="${p}" ${idx===0? 'checked': ''}> <span>${p}</span></label>`;
+                    prioList.appendChild(wrapper);
+                });
+
+                // Suggested title and explanation
+                if (data.suggested_title) titleEl.textContent = data.suggested_title;
+                if (data.explanation) explanationEl.textContent = data.explanation;
+
+                // Render category options
+                const catOptions = data.category_options || [];
+                if (catList) {
+                    catOptions.forEach((c, idx) => {
+                        const id = `cat-opt-${idx}`;
+                        const wrapper = document.createElement('div');
+                        wrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-cat" id="${id}" value="${c}" ${idx===0? 'checked': ''}> <span>${c}</span></label>`;
+                        catList.appendChild(wrapper);
+                    });
+                    // Add "Other" option
+                    const otherId = `cat-opt-other`;
+                    const otherWrapper = document.createElement('div');
+                    otherWrapper.innerHTML = `<label style="display:flex;align-items:center;gap:8px;"><input type="radio" name="suggest-cat" id="${otherId}" value="__other"> <span>Diğer...</span></label>`;
+                    catList.appendChild(otherWrapper);
+                    if (catOtherDiv) catOtherDiv.style.display = 'none';
+                    // listen for changes to show/hide custom input
+                    catList.querySelectorAll('input[name="suggest-cat"]').forEach(r => {
+                        r.addEventListener('change', () => {
+                            const sel = document.querySelector('input[name="suggest-cat"]:checked');
+                            if (sel && sel.value === '__other') {
+                                if (catOtherDiv) catOtherDiv.style.display = 'block';
+                                if (catOtherInput) catOtherInput.focus();
+                            } else {
+                                if (catOtherDiv) catOtherDiv.style.display = 'none';
+                            }
+                        });
+                    });
+                }
+
+                // Put suggested title into placeholder so user can accept it
+                if (data.suggested_title) {
+                    const titleInput = document.getElementById('ticket-title');
+                    if (titleInput && !titleInput.value) titleInput.placeholder = data.suggested_title;
+                }
+
                 suggestionsDiv.style.display = "block";
             } else {
                 const err = await resp.json();
@@ -355,26 +426,48 @@ if (suggestBtn) {
 
 if (acceptSuggestionBtn) {
     acceptSuggestionBtn.addEventListener("click", () => {
-        const dept = suggestedDepartmentSpan.textContent;
-        const prio = suggestedPrioritySpan.textContent;
-        if (dept && dept !== "(öneri yok)") {
+        // Read selected department radio
+        const selectedDept = document.querySelector('input[name="suggest-dept"]:checked');
+        const selectedPrio = document.querySelector('input[name="suggest-prio"]:checked');
+                const selectedCat = document.querySelector('input[name="suggest-cat"]:checked');
+
+        if (selectedDept) {
             const deptSelect = document.getElementById("ticket-department");
             for (let i = 0; i < deptSelect.options.length; i++) {
-                if (deptSelect.options[i].value === dept) {
+                if (deptSelect.options[i].value === selectedDept.value) {
                     deptSelect.selectedIndex = i;
                     break;
                 }
             }
         }
-        if (prio) {
+
+        if (selectedPrio) {
             const prioSelect = document.getElementById("ticket-priority");
             for (let i = 0; i < prioSelect.options.length; i++) {
-                if (prioSelect.options[i].value.toLowerCase() === prio.toLowerCase()) {
+                if (prioSelect.options[i].value === selectedPrio.value) {
                     prioSelect.selectedIndex = i;
                     break;
                 }
             }
         }
+
+        const titleInput = document.getElementById('ticket-title');
+        const suggestedTitleEl = document.getElementById('suggested-title');
+        if (titleInput && !titleInput.value && suggestedTitleEl && suggestedTitleEl.textContent) {
+            titleInput.value = suggestedTitleEl.textContent;
+        }
+
+        // Apply selected category into ticket-category input
+        if (selectedCat) {
+            const ticketCatInput = document.getElementById('ticket-category');
+            if (selectedCat.value === '__other') {
+                const custom = document.getElementById('suggested-category-custom')?.value || '';
+                if (ticketCatInput) ticketCatInput.value = custom;
+            } else {
+                if (ticketCatInput) ticketCatInput.value = selectedCat.value;
+            }
+        }
+
         suggestionsDiv.style.display = "none";
     });
 }
@@ -442,11 +535,18 @@ async function loadMyTickets() {
                 
                 // Creator role göster (admin/manager için)
                 let creatorInfo = "";
-                if (currentUserRole === "admin" || currentUserRole === "department") {
-                    const creatorRole = ticket.created_by_user?.role_id === 1 ? "Öğrenci" : 
-                                       ticket.created_by_user?.role_id === 2 ? "Destek Personeli" :
-                                       ticket.created_by_user?.role_id === 3 ? "Departman Yöneticisi" :
-                                       ticket.created_by_user?.role_id === 4 ? "Yönetici" : "Bilinmiyor";
+                if (currentUserRole === "admin" || currentUserRole === "department" || currentUserRole === "support") {
+                    // Prefer role_name if provided by the API; otherwise fall back to role_id mapping
+                    let creatorRole = "Bilinmiyor";
+                    if (ticket.created_by_user?.role_name) {
+                        const rn = ticket.created_by_user.role_name.toLowerCase();
+                        creatorRole = rn === 'student' ? 'Öğrenci' : rn === 'support' ? 'Destek Personeli' : rn === 'department' ? 'Departman Yöneticisi' : rn === 'admin' ? 'Yönetici' : 'Bilinmiyor';
+                    } else if (ticket.created_by_user?.role_id) {
+                        creatorRole = ticket.created_by_user.role_id === 1 ? "Öğrenci" : 
+                                       ticket.created_by_user.role_id === 2 ? "Destek Personeli" :
+                                       ticket.created_by_user.role_id === 3 ? "Departman Yöneticisi" :
+                                       ticket.created_by_user.role_id === 4 ? "Yönetici" : "Bilinmiyor";
+                    }
                     creatorInfo = `<p><strong>Oluşturan:</strong> ${ticket.created_by_user?.email || "Bilinmiyor"} (${creatorRole})</p>`;
                 }
                 
@@ -473,34 +573,32 @@ async function loadMyTickets() {
                 
                 // Status update UI (support kendi ticket'larını, admin/manager tüm ticket'ları)
                 let statusUpdateUI = "";
-                if ((currentUserRole === "support" && ticket.assigned_support_id === null) || 
-                    (currentUserRole === "admin" || currentUserRole === "department") || 
-                    (currentUserRole === "support")) {
-                    // Support: sadece kendisine atanan ticket'ları görebilir ve güncelleyebilir
-                    // Admin/Manager: tüm ticket'ları güncelleyebilir
-                    let showStatus = false;
-                    if (currentUserRole === "admin" || currentUserRole === "department") {
-                        showStatus = true;
-                    } else if (currentUserRole === "support" && ticket.assigned_support_id) {
-                        showStatus = true;
-                    }
-                    
-                    if (showStatus) {
-                        statusUpdateUI = `
-                            <div style="margin-top: 10px; padding: 12px; background: #d4edda; border: 2px solid #28a745; border-radius: 5px;">
-                                <strong style="color: #155724;">✓ DURUMU GÜNCELLE</strong>
-                                <div style="margin-top: 8px;">
-                                    <select id="status-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
-                                        <option value="Open">📂 Açık</option>
-                                        <option value="In Progress">⏳ İşlemde</option>
-                                        <option value="Resolved">✅ Çözüldü</option>
-                                        <option value="Closed">🔒 Kapalı</option>
-                                    </select>
-                                    <button type="button" class="status-update-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">KAYDET</button>
-                                </div>
+                let showStatus = false;
+                
+                // Admin ve Department Manager tüm ticket'ları güncelleyebilir
+                if (currentUserRole === "admin" || currentUserRole === "department") {
+                    showStatus = true;
+                } 
+                // Support sadece kendisine atanan ticket'ları güncelleyebilir
+                else if (currentUserRole === "support" && ticket.assigned_support_id) {
+                    showStatus = true;
+                }
+                
+                if (showStatus) {
+                    statusUpdateUI = `
+                        <div style="margin-top: 10px; padding: 12px; background: #d4edda; border: 2px solid #28a745; border-radius: 5px;">
+                            <strong style="color: #155724;">✓ DURUMU GÜNCELLE</strong>
+                            <div style="margin-top: 8px;">
+                                <select id="status-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
+                                    <option value="Open">📂 Açık</option>
+                                    <option value="In Progress">⏳ İşlemde</option>
+                                    <option value="Resolved">✅ Çözüldü</option>
+                                    <option value="Closed">🔒 Kapalı</option>
+                                </select>
+                                <button type="button" class="status-update-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">KAYDET</button>
                             </div>
-                        `;
-                    }
+                        </div>
+                    `;
                 }
                 
                 ticketDiv.innerHTML = `
@@ -512,6 +610,7 @@ async function loadMyTickets() {
                     <p><strong>Oluşturma:</strong> ${new Date(ticket.created_at).toLocaleString('tr-TR')}</p>
                     ${supportUI}
                     ${statusUpdateUI}
+                    ${currentUserRole === 'support' ? `<div style="margin-top:10px;"><button data-ticket-id="${ticket.id}" class="summary-btn" style="margin-right:6px;padding:6px 10px;background:#17a2b8;color:white;border:none;border-radius:4px;cursor:pointer;">ÖZET</button><button data-ticket-id="${ticket.id}" class="draft-btn" style="padding:6px 10px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer;">CEVAP TASLAĞI</button></div><div id="ai-area-${ticket.id}" style="margin-top:8px"></div>` : ''}
                     <div id="comments-${ticket.id}"></div>
                     <form class="comment-form" data-ticket-id="${ticket.id}">
                         <input type="text" placeholder="Yorum yazın..." required>
@@ -547,6 +646,89 @@ async function loadMyTickets() {
                         }
                         await updateTicketStatus(ticket.id, newStatus);
                         loadMyTickets();
+                    });
+                }
+
+                // AI Özet ve Cevap taslağı butonları (support için)
+                const summaryBtn = ticketDiv.querySelector(".summary-btn");
+                if (summaryBtn) {
+                    summaryBtn.addEventListener("click", async () => {
+                        const area = document.getElementById(`ai-area-${ticket.id}`);
+                        area.innerHTML = "<em>Özet oluşturuluyor...</em>";
+                        const result = await fetchTicketSummary(ticket.id);
+                        area.innerHTML = `<div style='padding:10px;border:1px solid #17a2b8;background:#e9f7fb;border-radius:4px;'><strong>Özet:</strong><div style='margin-top:6px;'>${escapeHtml(result.summary)}</div></div>`;
+                    });
+                }
+
+                const draftBtn = ticketDiv.querySelector(".draft-btn");
+                if (draftBtn) {
+                    draftBtn.addEventListener("click", async () => {
+                        const area = document.getElementById(`ai-area-${ticket.id}`);
+                        area.innerHTML = "<em>Taslak oluşturuluyor...</em>";
+                        const result = await fetchTicketDraft(ticket.id);
+                        const draftText = result.draft || "";
+                        area.innerHTML = `
+                            <div style='padding:10px;border:1px solid #007bff;background:#eef6ff;border-radius:4px;'>
+                                <strong>Cevap Taslağı:</strong>
+                                <div style='margin-top:6px;'>
+                                    <textarea id="draft-textarea-${ticket.id}" style="width:100%;height:140px;padding:8px;border-radius:4px;border:1px solid #cfe2ff;">${escapeHtml(draftText)}</textarea>
+                                </div>
+                                <div style="margin-top:8px;display:flex;gap:8px;">
+                                    <button id="send-draft-${ticket.id}" class="send-draft-btn" style="padding:8px 12px;background:#28a745;color:#fff;border:none;border-radius:4px;cursor:pointer;">Gönder (Çözüm olarak)</button>
+                                    <button id="copy-draft-${ticket.id}" class="copy-draft-btn" style="padding:8px 12px;background:#6c757d;color:#fff;border:none;border-radius:4px;cursor:pointer;">Kopyala</button>
+                                    <button id="close-draft-${ticket.id}" class="close-draft-btn" style="padding:8px 12px;background:#f8f9fa;color:#000;border:1px solid #ced4da;border-radius:4px;cursor:pointer;">Kapat</button>
+                                </div>
+                            </div>
+                        `;
+
+                        const sendBtn = document.getElementById(`send-draft-${ticket.id}`);
+                        const copyBtn = document.getElementById(`copy-draft-${ticket.id}`);
+                        const closeBtn = document.getElementById(`close-draft-${ticket.id}`);
+
+                        if (copyBtn) {
+                            copyBtn.addEventListener('click', () => {
+                                const ta = document.getElementById(`draft-textarea-${ticket.id}`);
+                                if (ta) {
+                                    ta.select();
+                                    try { document.execCommand('copy'); showMessage('Taslak kopyalandı.', 'success'); }
+                                    catch (e) { navigator.clipboard && navigator.clipboard.writeText(ta.value); showMessage('Taslak kopyalandı.', 'success'); }
+                                }
+                            });
+                        }
+
+                        if (closeBtn) {
+                            closeBtn.addEventListener('click', () => {
+                                area.innerHTML = '';
+                            });
+                        }
+
+                        if (sendBtn) {
+                            sendBtn.addEventListener('click', async () => {
+                                const ta = document.getElementById(`draft-textarea-${ticket.id}`);
+                                const content = ta ? ta.value.trim() : '';
+                                if (!content) { showMessage('Lütfen taslağı doldurun.', 'error'); return; }
+
+                                // Durum dropdown'dan seçili durumu al
+                                const statusSelect = document.getElementById(`status-select-${ticket.id}`);
+                                const selectedStatus = statusSelect ? statusSelect.value : 'Resolved';
+                                if (!selectedStatus) { showMessage('Lütfen durum seçiniz.', 'error'); return; }
+
+                                // Gönder: seçili status'u ve taslağı resolution_note olarak gönder
+                                sendBtn.disabled = true;
+                                sendBtn.textContent = 'Gönderiliyor...';
+                                try {
+                                    await updateTicketStatus(ticket.id, selectedStatus, content);
+                                    showMessage(`Taslak gönderildi ve durum "${selectedStatus}" olarak güncellendi.`, 'success');
+                                    loadMyTickets();
+                                } catch (e) {
+                                    console.error(e);
+                                    showMessage('Gönderme başarısız oldu.', 'error');
+                                } finally {
+                                    sendBtn.disabled = false;
+                                    sendBtn.textContent = 'Gönder (Çözüm olarak)';
+                                }
+                            });
+                        }
                     });
                 }
 
@@ -633,7 +815,7 @@ async function reassignSupport(ticketId, supportId) {
 }
 
 // Update ticket status
-async function updateTicketStatus(ticketId, newStatus) {
+async function updateTicketStatus(ticketId, newStatus, resolutionNote = null) {
     try {
         const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
             method: "PUT",
@@ -641,7 +823,7 @@ async function updateTicketStatus(ticketId, newStatus) {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${authToken}`
             },
-            body: JSON.stringify({ new_status: newStatus })
+            body: JSON.stringify({ new_status: newStatus, ...(resolutionNote ? { resolution_note: resolutionNote } : {}) })
         });
 
         if (response.ok) {
@@ -719,4 +901,45 @@ function getRoleLabel(role) {
         "admin": "Yönetici"
     };
     return roleLabels[role] || role;
+}
+
+async function fetchTicketSummary(ticketId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/summarize`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${authToken}` }
+        });
+        if (res.ok) return await res.json();
+        return { summary: "Özet alınamadı." };
+    } catch (e) {
+        console.error(e);
+        return { summary: "Özet alınamadı." };
+    }
+}
+
+async function fetchTicketDraft(ticketId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/draft-response`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${authToken}` }
+        });
+        if (res.ok) return await res.json();
+        return { draft: "Taslak alınamadı." };
+    } catch (e) {
+        console.error(e);
+        return { draft: "Taslak alınamadı." };
+    }
+}
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe.replace(/[&<>"]/g, function(m) {
+        switch (m) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            default: return m;
+        }
+    });
 }

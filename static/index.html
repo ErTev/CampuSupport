@@ -61,18 +61,39 @@
             <div id="student-section" style="display:none;">
                 <h2>Yeni Ticket Oluştur</h2>
                 <form id="ticket-form">
-                    <label for="ticket-title">Başlık:</label>
-                    <input type="text" id="ticket-title" placeholder="Örn: Şifre sıfırlama isteği" required>
+                    <label for="ticket-title">Başlık (opsiyonel):</label>
+                    <input type="text" id="ticket-title" placeholder="Örn: Şifre sıfırlama isteği">
                     
                     <label for="ticket-description">Açıklama:</label>
                     <textarea id="ticket-description" placeholder="Sorununuzun detaylı açıklamasını yapınız..." required></textarea>
                     <button type="button" id="suggest-btn" style="margin-top:8px;">Öneri Al</button>
                     <div id="suggestions" style="margin-top:8px; display:none;">
-                        <strong>Önerilen Departman:</strong> <span id="suggested-department"></span>
-                        <br>
-                        <strong>Önerilen Öncelik:</strong> <span id="suggested-priority"></span>
-                        <br>
-                        <button type="button" id="accept-suggestion" style="margin-top:6px;">Öneriyi Kabul Et</button>
+                        <div>
+                            <strong>Önerilen Departmanlar:</strong>
+                            <div id="suggested-departments-list" style="margin-top:6px;"></div>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <strong>Önerilen Öncelikler:</strong>
+                            <div id="suggested-priorities-list" style="margin-top:6px;"></div>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <strong>Önerilen Başlık:</strong>
+                            <div id="suggested-title" style="margin-top:6px;color:#444;font-style:italic;"></div>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <strong>Önerilen Kategoriler:</strong>
+                            <div id="suggested-categories-list" style="margin-top:6px;"></div>
+                            <div id="suggested-category-other" style="display:none;margin-top:6px;">
+                                <input type="text" id="suggested-category-custom" placeholder="Kategori girin..." />
+                            </div>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <strong>Açıklama:</strong>
+                            <div id="suggested-explanation" style="margin-top:6px;color:#333"></div>
+                        </div>
+                        <div style="margin-top:8px;">
+                            <button type="button" id="accept-suggestion" style="margin-top:6px;">Öneriyi Kabul Et</button>
+                        </div>
                     </div>
                     
                     <label for="ticket-department">Departman:</label>
@@ -91,6 +112,9 @@
                         <option value="Medium">Orta</option>
                         <option value="High">Yüksek</option>
                     </select>
+                    
+                    <label for="ticket-category">Kategori (opsiyonel):</label>
+                    <input type="text" id="ticket-category" placeholder="Örn: İnternet / Yazılım / Donanım" />
                     
                     <button type="submit">Ticket Gönder</button>
                 </form>

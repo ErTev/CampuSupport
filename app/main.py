@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import logging
+import sys
 from sqlalchemy.orm import Session
 from app.database import Base, engine, SessionLocal
 from app.routers import auth, tickets
@@ -9,6 +11,16 @@ from app.models.user import Role, Department
 from starlette.middleware.cors import CORSMiddleware # CORS için yeni import
 
 Base.metadata.create_all(bind=engine)
+
+# Configure basic logging for the application
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        # you can also add a FileHandler here if persistent logs are desired
+    ]
+)
 
 def seed_database(db: Session):
     roles = ["student", "support", "department", "admin"]
@@ -46,7 +58,26 @@ templates = Jinja2Templates(directory="static")
 def on_startup():
     db = SessionLocal()
     seed_database(db)
-    db.close()
+    # Ensure `category` column exists in tickets table (simple SQLite-safe check)
+    try:
+        # Use raw connection to check columns
+        conn = engine.raw_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(tickets);")
+        cols = [r[1] for r in cursor.fetchall()]
+        if 'category' not in cols:
+            try:
+                cursor.execute("ALTER TABLE tickets ADD COLUMN category TEXT;")
+                conn.commit()
+                print('Added `category` column to tickets table')
+            except Exception as e:
+                print('Failed to add category column:', e)
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print('Startup DB check error:', e)
+    finally:
+        db.close()
 
 app.include_router(auth.router, prefix="/api/v1/auth")
 app.include_router(tickets.router, prefix="/api/v1/tickets")

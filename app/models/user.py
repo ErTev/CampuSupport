@@ -30,3 +30,7 @@ class User(Base):
     created_tickets = relationship("Ticket", foreign_keys="[Ticket.created_by_user_id]", back_populates="creator") 
     assigned_tickets = relationship("Ticket", foreign_keys="[Ticket.assigned_support_id]", back_populates="assignee") 
     assigned_tickets = relationship("Ticket", foreign_keys="[Ticket.assigned_support_id]", back_populates="assignee") 
+
+    @property
+    def role_name(self):
+        return self.role.name if self.role else None

@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "CampuSupport - Minimal",
+    "_postman_id": "campusupport-minimal",
+    "description": "Basic collection for key endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"test@example.com\",\n  \"password\": \"yourpassword\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/auth/login"
+      }
+    },
+    {
+      "name": "Tickets - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{auth_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Test Ticket\",\n  \"description\": \"Example description\",\n  \"department_name\": \"Bilgi Islem\"\n}"
+        },
+        "url": "{{base_url}}/api/v1/tickets/"
+      }
+    },
+    {
+      "name": "Tickets - Suggest",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"Network down\",\n  \"description\": \"Internet is not working in lab\"\n}" },
+        "url": "{{base_url}}/api/v1/tickets/suggest"
+      }
+    },
+    {
+      "name": "Tickets - Draft Response",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{auth_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"ticket_id\": 1,\n  \"draft_text\": \"Providing initial steps...\"\n}" },
+        "url": "{{base_url}}/api/v1/tickets/draft"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "auth_token", "value": "" }
+  ]
+}
