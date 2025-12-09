@@ -60,6 +60,7 @@ class SuggestResponse(BaseModel):
 
 class UpdateStatusRequest(BaseModel):
     new_status: str = Field(..., pattern="^(Open|In Progress|Resolved|Closed)$")
+    resolution_note: Optional[str] = Field(None, max_length=2000, description="(Opsiyonel) Support tarafından eklenen çözüm notu veya açıklama")
 
 
 class ReassignSupportRequest(BaseModel):

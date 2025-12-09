@@ -6,7 +6,9 @@ from app.models.ticket import Ticket, Comment
 from app.models.user import User, Department, Role
 from app.schemas.ticket import TicketCreate, TicketResponse, CommentCreate
 from app.schemas.ticket import SuggestRequest, SuggestResponse, UpdateStatusRequest, ReassignSupportRequest
-from app.core.services import suggest_ticket
+from app.core.services import suggest_ticket, summarize_text, draft_response
+from app.core.notifications import NotificationFactory
+from datetime import datetime
 from app.core.auth import get_current_user, get_department, get_support
 from typing import List, Optional
 
@@ -210,10 +212,82 @@ def update_ticket_status(
     
     old_status = ticket.status
     ticket.status = new_status
+
+    # Eğer ticket sonuclandırılıyorsa (Resolved/Closed) ve destek/manager/admin tarafından yapılıyorsa
+    # veritabanına işlem kaydı olarak bir yorum bırakıyoruz (resolution_note varsa içeriğini kullan)
+    if new_status in ["Resolved", "Closed"]:
+        note = req.resolution_note or f"Durum {new_status} olarak güncellendi."
+        comment = Comment(
+            ticket_id=ticket.id,
+            user_id=current_user.id,
+            content=f"[Çözüm Kaydı] {current_user.email}: {note}"
+        )
+        db.add(comment)
+        
+        # Harici bildirim servisleri çağır (Email, Slack, SMS vb.)
+        creator = db.query(User).filter(User.id == ticket.created_by_user_id).first()
+        NotificationFactory.send_all_enabled(
+            ticket_id=ticket.id,
+            title=ticket.title,
+            status=new_status,
+            description=ticket.description,
+            resolver_email=current_user.email,
+            created_by_email=creator.email if creator else "unknown@example.com",
+            phone_number=getattr(creator, 'phone_number', None) if creator else None
+        )
+
     db.commit()
     db.refresh(ticket)
 
     return {"message": f"Ticket {ticket_id} durumu '{new_status}' olarak guncellendi."}
+
+
+
+@router.post("/{ticket_id}/summarize")
+async def summarize_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_support)
+):
+    """Destek personeli için ticket özeti üretir."""
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket bulunamadi.")
+
+    # Yetki: support sadece kendisine atanan ticket'ı görebilir
+    if current_user.role.name == "support" and ticket.assigned_support_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu ticket'a yetkiniz yok.")
+
+    # Üret
+    try:
+        summary = await summarize_text(ticket.title, ticket.description)
+    except Exception:
+        summary = "Özet oluşturulamadı."
+
+    return {"summary": summary}
+
+
+@router.post("/{ticket_id}/draft-response")
+async def draft_response_for_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_support)
+):
+    """Destek personeli için cevap taslağı üretir."""
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket bulunamadi.")
+
+    # Yetki kontrolü
+    if current_user.role.name == "support" and ticket.assigned_support_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu ticket'a yetkiniz yok.")
+
+    try:
+        draft = await draft_response(ticket.title, ticket.description)
+    except Exception:
+        draft = "Taslak olusturulamadi."
+
+    return {"draft": draft}
 
 @router.post("/{ticket_id}/comment", status_code=status.HTTP_201_CREATED)
 def add_comment_to_ticket(

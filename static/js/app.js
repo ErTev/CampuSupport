@@ -473,34 +473,32 @@ async function loadMyTickets() {
                 
                 // Status update UI (support kendi ticket'larını, admin/manager tüm ticket'ları)
                 let statusUpdateUI = "";
-                if ((currentUserRole === "support" && ticket.assigned_support_id === null) || 
-                    (currentUserRole === "admin" || currentUserRole === "department") || 
-                    (currentUserRole === "support")) {
-                    // Support: sadece kendisine atanan ticket'ları görebilir ve güncelleyebilir
-                    // Admin/Manager: tüm ticket'ları güncelleyebilir
-                    let showStatus = false;
-                    if (currentUserRole === "admin" || currentUserRole === "department") {
-                        showStatus = true;
-                    } else if (currentUserRole === "support" && ticket.assigned_support_id) {
-                        showStatus = true;
-                    }
-                    
-                    if (showStatus) {
-                        statusUpdateUI = `
-                            <div style="margin-top: 10px; padding: 12px; background: #d4edda; border: 2px solid #28a745; border-radius: 5px;">
-                                <strong style="color: #155724;">✓ DURUMU GÜNCELLE</strong>
-                                <div style="margin-top: 8px;">
-                                    <select id="status-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
-                                        <option value="Open">📂 Açık</option>
-                                        <option value="In Progress">⏳ İşlemde</option>
-                                        <option value="Resolved">✅ Çözüldü</option>
-                                        <option value="Closed">🔒 Kapalı</option>
-                                    </select>
-                                    <button type="button" class="status-update-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">KAYDET</button>
-                                </div>
+                let showStatus = false;
+                
+                // Admin ve Department Manager tüm ticket'ları güncelleyebilir
+                if (currentUserRole === "admin" || currentUserRole === "department") {
+                    showStatus = true;
+                } 
+                // Support sadece kendisine atanan ticket'ları güncelleyebilir
+                else if (currentUserRole === "support" && ticket.assigned_support_id) {
+                    showStatus = true;
+                }
+                
+                if (showStatus) {
+                    statusUpdateUI = `
+                        <div style="margin-top: 10px; padding: 12px; background: #d4edda; border: 2px solid #28a745; border-radius: 5px;">
+                            <strong style="color: #155724;">✓ DURUMU GÜNCELLE</strong>
+                            <div style="margin-top: 8px;">
+                                <select id="status-select-${ticket.id}" style="margin-right: 5px; padding: 5px;">
+                                    <option value="Open">📂 Açık</option>
+                                    <option value="In Progress">⏳ İşlemde</option>
+                                    <option value="Resolved">✅ Çözüldü</option>
+                                    <option value="Closed">🔒 Kapalı</option>
+                                </select>
+                                <button type="button" class="status-update-btn" data-ticket-id="${ticket.id}" style="padding: 8px 15px; background-color: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">KAYDET</button>
                             </div>
-                        `;
-                    }
+                        </div>
+                    `;
                 }
                 
                 ticketDiv.innerHTML = `
@@ -512,6 +510,7 @@ async function loadMyTickets() {
                     <p><strong>Oluşturma:</strong> ${new Date(ticket.created_at).toLocaleString('tr-TR')}</p>
                     ${supportUI}
                     ${statusUpdateUI}
+                    ${currentUserRole === 'support' ? `<div style="margin-top:10px;"><button data-ticket-id="${ticket.id}" class="summary-btn" style="margin-right:6px;padding:6px 10px;background:#17a2b8;color:white;border:none;border-radius:4px;cursor:pointer;">ÖZET</button><button data-ticket-id="${ticket.id}" class="draft-btn" style="padding:6px 10px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer;">CEVAP TASLAĞI</button></div><div id="ai-area-${ticket.id}" style="margin-top:8px"></div>` : ''}
                     <div id="comments-${ticket.id}"></div>
                     <form class="comment-form" data-ticket-id="${ticket.id}">
                         <input type="text" placeholder="Yorum yazın..." required>
@@ -547,6 +546,84 @@ async function loadMyTickets() {
                         }
                         await updateTicketStatus(ticket.id, newStatus);
                         loadMyTickets();
+                    });
+                }
+
+                // AI Özet ve Cevap taslağı butonları (support için)
+                const summaryBtn = ticketDiv.querySelector(".summary-btn");
+                if (summaryBtn) {
+                    summaryBtn.addEventListener("click", async () => {
+                        const area = document.getElementById(`ai-area-${ticket.id}`);
+                        area.innerHTML = "<em>Özet oluşturuluyor...</em>";
+                        const result = await fetchTicketSummary(ticket.id);
+                        area.innerHTML = `<div style='padding:10px;border:1px solid #17a2b8;background:#e9f7fb;border-radius:4px;'><strong>Özet:</strong><div style='margin-top:6px;'>${escapeHtml(result.summary)}</div></div>`;
+                    });
+                }
+
+                const draftBtn = ticketDiv.querySelector(".draft-btn");
+                if (draftBtn) {
+                    draftBtn.addEventListener("click", async () => {
+                        const area = document.getElementById(`ai-area-${ticket.id}`);
+                        area.innerHTML = "<em>Taslak oluşturuluyor...</em>";
+                        const result = await fetchTicketDraft(ticket.id);
+                        const draftText = result.draft || "";
+                        area.innerHTML = `
+                            <div style='padding:10px;border:1px solid #007bff;background:#eef6ff;border-radius:4px;'>
+                                <strong>Cevap Taslağı:</strong>
+                                <div style='margin-top:6px;'>
+                                    <textarea id="draft-textarea-${ticket.id}" style="width:100%;height:140px;padding:8px;border-radius:4px;border:1px solid #cfe2ff;">${escapeHtml(draftText)}</textarea>
+                                </div>
+                                <div style="margin-top:8px;display:flex;gap:8px;">
+                                    <button id="send-draft-${ticket.id}" class="send-draft-btn" style="padding:8px 12px;background:#28a745;color:#fff;border:none;border-radius:4px;cursor:pointer;">Gönder (Çözüm olarak)</button>
+                                    <button id="copy-draft-${ticket.id}" class="copy-draft-btn" style="padding:8px 12px;background:#6c757d;color:#fff;border:none;border-radius:4px;cursor:pointer;">Kopyala</button>
+                                    <button id="close-draft-${ticket.id}" class="close-draft-btn" style="padding:8px 12px;background:#f8f9fa;color:#000;border:1px solid #ced4da;border-radius:4px;cursor:pointer;">Kapat</button>
+                                </div>
+                            </div>
+                        `;
+
+                        const sendBtn = document.getElementById(`send-draft-${ticket.id}`);
+                        const copyBtn = document.getElementById(`copy-draft-${ticket.id}`);
+                        const closeBtn = document.getElementById(`close-draft-${ticket.id}`);
+
+                        if (copyBtn) {
+                            copyBtn.addEventListener('click', () => {
+                                const ta = document.getElementById(`draft-textarea-${ticket.id}`);
+                                if (ta) {
+                                    ta.select();
+                                    try { document.execCommand('copy'); showMessage('Taslak kopyalandı.', 'success'); }
+                                    catch (e) { navigator.clipboard && navigator.clipboard.writeText(ta.value); showMessage('Taslak kopyalandı.', 'success'); }
+                                }
+                            });
+                        }
+
+                        if (closeBtn) {
+                            closeBtn.addEventListener('click', () => {
+                                area.innerHTML = '';
+                            });
+                        }
+
+                        if (sendBtn) {
+                            sendBtn.addEventListener('click', async () => {
+                                const ta = document.getElementById(`draft-textarea-${ticket.id}`);
+                                const content = ta ? ta.value.trim() : '';
+                                if (!content) { showMessage('Lütfen taslağı doldurun.', 'error'); return; }
+
+                                // Gönder: status'u Resolved yap ve resolution_note olarak taslağı gönder
+                                sendBtn.disabled = true;
+                                sendBtn.textContent = 'Gönderiliyor...';
+                                try {
+                                    await updateTicketStatus(ticket.id, 'Resolved', content);
+                                    showMessage('Taslak çözümmüş gibi kaydedildi ve durum güncellendi.', 'success');
+                                    loadMyTickets();
+                                } catch (e) {
+                                    console.error(e);
+                                    showMessage('Gönderme başarısız oldu.', 'error');
+                                } finally {
+                                    sendBtn.disabled = false;
+                                    sendBtn.textContent = 'Gönder (Çözüm olarak)';
+                                }
+                            });
+                        }
                     });
                 }
 
@@ -633,7 +710,7 @@ async function reassignSupport(ticketId, supportId) {
 }
 
 // Update ticket status
-async function updateTicketStatus(ticketId, newStatus) {
+async function updateTicketStatus(ticketId, newStatus, resolutionNote = null) {
     try {
         const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
             method: "PUT",
@@ -641,7 +718,7 @@ async function updateTicketStatus(ticketId, newStatus) {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${authToken}`
             },
-            body: JSON.stringify({ new_status: newStatus })
+            body: JSON.stringify({ new_status: newStatus, ...(resolutionNote ? { resolution_note: resolutionNote } : {}) })
         });
 
         if (response.ok) {
@@ -719,4 +796,45 @@ function getRoleLabel(role) {
         "admin": "Yönetici"
     };
     return roleLabels[role] || role;
+}
+
+async function fetchTicketSummary(ticketId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/summarize`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${authToken}` }
+        });
+        if (res.ok) return await res.json();
+        return { summary: "Özet alınamadı." };
+    } catch (e) {
+        console.error(e);
+        return { summary: "Özet alınamadı." };
+    }
+}
+
+async function fetchTicketDraft(ticketId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/draft-response`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${authToken}` }
+        });
+        if (res.ok) return await res.json();
+        return { draft: "Taslak alınamadı." };
+    } catch (e) {
+        console.error(e);
+        return { draft: "Taslak alınamadı." };
+    }
+}
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe.replace(/[&<>"]/g, function(m) {
+        switch (m) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            default: return m;
+        }
+    });
 }

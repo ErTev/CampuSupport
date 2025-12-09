@@ -1,5 +1,6 @@
 import openai
 import requests
+import asyncio
 from app.core.config import settings
 
 # OpenAI client (will be used only if valid key is set)
@@ -7,6 +8,21 @@ try:
     openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY != "placeholder" else None
 except Exception:
     openai_client = None
+
+# Helper to run async functions in sync context
+def run_async(coro):
+    """Safely run async function in sync context (for FastAPI sync endpoints)."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If already in async context, create task instead
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                return loop.run_in_executor(executor, lambda: asyncio.run(coro))
+    except RuntimeError:
+        pass
+    # Default: run normally
+    return asyncio.run(coro)
 
 
 def suggest_priority_fallback(title: str, description: str) -> str:
@@ -92,6 +108,86 @@ async def suggest_ticket(title: str, description: str, departments: list) -> dic
     category = await categorize_ticket(title, description, departments)
     priority = await suggest_priority(title, description)
     return {"department": category, "priority": priority}
+
+
+async def summarize_text(title: str, description: str) -> str:
+    """
+    Kısa özet üretir. OpenAI yoksa basit kırpma yapar.
+    """
+    full_text = f"{title}\n\n{description}" if title else description
+    # Prepare a safe fallback snippet
+    snippet = full_text.strip()
+    if len(snippet) > 200:
+        end = snippet.find('. ', 150)
+        if end != -1 and end < 300:
+            snippet = snippet[:end+1]
+        else:
+            snippet = snippet[:200] + '...'
+
+    if not openai_client or settings.OPENAI_API_KEY == "placeholder":
+        return snippet
+
+    prompt = (
+        "Aşağıdaki ticket başlığı ve açıklamasını kısa ve net bir şekilde Türkçe olarak 1-2 cümleyle özetle. "
+        "Sadece özeti döndür.\n\n"
+        f"Başlık: {title}\nAçıklama: {description}"
+    )
+
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+            temperature=0.2
+        )
+        summary = response.choices[0].message.content.strip()
+        if summary:
+            return summary
+        return snippet
+    except Exception as e:
+        print(f"OpenAI summary hatasi: {e}")
+        return snippet
+
+
+async def draft_response(title: str, description: str) -> str:
+    """
+    Destek personeline yönelik cevap taslağı üretir. OpenAI yoksa basit şablon döner.
+    """
+    # Prepare a simple fallback template
+    short_desc = (description or "").strip()
+    if len(short_desc) > 150:
+        short_summary = short_desc[:150] + '...'
+    else:
+        short_summary = short_desc
+
+    template = (
+        f"Merhaba,\n\nTalebinizi aldık: '{title}'. \nKısa özet: {short_summary}\n\n"
+        "En kısa sürede ilgileneceğiz. Ek bilgi gerekiyorsa lütfen bize iletin.\n\nSaygılarımızla,\nDestek Ekibi"
+    )
+
+    if not openai_client or settings.OPENAI_API_KEY == "placeholder":
+        return template
+
+    prompt = (
+        "Sen bir teknik destek temsilcisisin. Aşağıdaki ticket açıklamasına göre kullanıcının anlayacağı, nazik ve çözüm odaklı bir cevap taslağı oluştur. "
+        "Cevap Türkçe, kısa ve net olsun; gerekli aksiyonları belirt.\n\n"
+        f"Başlık: {title}\nAçıklama: {description}"
+    )
+
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=250,
+            temperature=0.3
+        )
+        draft = response.choices[0].message.content.strip()
+        if draft:
+            return draft
+        return template
+    except Exception as e:
+        print(f"OpenAI draft hatasi: {e}")
+        return template
 
 async def send_notification(ticket_id: int, old_status: str, new_status: str):
     """
